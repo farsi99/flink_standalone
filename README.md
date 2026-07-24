@@ -44,7 +44,7 @@ Ensuite on demaare apache flink
 /opt/flink/bin/start-cluster.sh
 
 # Pour arrêter
-/opt/flink/bin/bin/stop-cluster.sh
+/opt/flink/bin/stop-cluster.sh
 ```
 On y accede via le lien suivant: ```http://localhost:8081```
 
