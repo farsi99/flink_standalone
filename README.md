@@ -41,12 +41,15 @@ sudo mv flink /opt/flink
 Ensuite on demaare apache flink
 ```bash
 # Pour démarrer
-./flink-server/bin/start-cluster.sh
+/opt/flink/bin/start-cluster.sh
 
 # Pour arrêter
-./flink-server/bin/stop-cluster.sh
+/opt/flink/bin/bin/stop-cluster.sh
 ```
 On y accede via le lien suivant: ```http://localhost:8081```
+
+# Télécharger ficher 
+wget https://repo1.maven.org/maven2/org/apache/flink/flink-sql-connector-kafka/4.0.1-2.0/flink-sql-connector-kafka-4.0.1-2.0.jar
 
 # On copie le fichier 
 ```bash
