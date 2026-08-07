@@ -98,3 +98,80 @@ cd /home/hfarouk/tests/flink
   -pyclientexec /home/hfarouk/tests/flink/.venv/bin/python
 
 ```
+
+# Environnement de dev local (Docker Compose)
+
+Un `docker-compose.yml` fournit un environnement local complet pour tester `job_freepro.py`
+sans toucher aux clusters Kafka de prod/preprod :
+
+- **kafka** : un broker Kafka (KRaft, sans Zookeeper) exposé sur `localhost:9092`.
+- **kafka-ui** : UI web sur `http://localhost:8080` pour inspecter topics/messages.
+- **jobmanager** / **taskmanager** : cluster Flink 2.2.1 (build local via `Dockerfile`,
+  Flink + Python3 + `apache-flink==2.2.1`), UI sur `http://localhost:8081`.
+
+Le job est monté dans les conteneurs Flink (`job_freepro.py` et `jars/`) et pointe par
+defaut vers les brokers de prod ; en local, `SRC_BROKERS`/`DST_BROKERS` sont surchargés
+vers `kafka:19092` (meme broker pour source et sink, simplement des topics differents).
+
+### Demarrer
+
+```bash
+docker compose up -d --build
+```
+
+### Creer les topics
+
+Necessaire : Flink liste les topics via AdminClient, qui ne declenche pas
+l'auto-creation meme si `auto.create.topics.enable=true` (et ce flag est de
+toute facon desactive sur le broker de dev).
+
+```bash
+./scripts/create-topics.sh
+```
+
+Cree les 4 topics utilises par le job (`telemetry_events_metadata`,
+`telemetry_events`, `events_metadata_freepro`, `virtports_events_freepro`),
+1 partition / 1 replica chacun. Le script est idempotent (`--if-not-exists`),
+on peut le relancer sans risque.
+
+### Soumettre le job
+
+```bash
+docker compose exec jobmanager /opt/flink/bin/flink run \
+  --python /opt/flink/usrlib/job_freepro.py \
+  --jarfile /opt/flink/usrlib/jars/flink-sql-connector-kafka-4.0.1-2.0.jar \
+  -pyexec /usr/bin/python3 \
+  -pyclientexec /usr/bin/python3 -d
+```
+
+Suivre l'execution sur `http://localhost:8081`.
+
+### Injecter des messages de test
+
+```bash
+docker exec -i kafka /opt/kafka/bin/kafka-console-producer.sh --bootstrap-server localhost:9092 \
+  --topic telemetry_events_metadata <<'EOF'
+{"name":"m1","timestamp":1,"tags":{"virtport_virtport-id":"vp1","path":"/epon-virtport/virtport/profile","nra_nro":"nra1","source":"srcA"},"values":{"/epon-virtport/virtport/profile":"6"}}
+EOF
+
+docker exec -i kafka /opt/kafka/bin/kafka-console-producer.sh --bootstrap-server localhost:9092 \
+  --topic telemetry_events <<'EOF'
+{"name":"e1","timestamp":100,"tags":{"virtport_virtport-id":"vp1","path":"/event/foo"},"values":{"/event/foo":"bar"}}
+EOF
+```
+
+### Lire les topics de sortie
+
+```bash
+docker exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 \
+  --topic events_metadata_freepro --from-beginning
+
+docker exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 \
+  --topic virtports_events_freepro --from-beginning
+```
+
+### Arreter et nettoyer
+
+```bash
+docker compose down -v
+```

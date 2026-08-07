@@ -27,8 +27,14 @@ CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 JAR_PATH = f"file://{os.path.join(CURRENT_DIR, 'jars/flink-sql-connector-kafka-4.0.1-2.0.jar')}"
 cfg.set_string("pipeline.jars", JAR_PATH)
 
-SRC_BROKERS = "kafka01.bip.mgt.proxad.net:9092,kafka02.bip.mgt.proxad.net:9092,kafka03.bip.mgt.proxad.net:9092"
-DST_BROKERS = "app-ppr01.dev.datan.mgt.proxad.net:9092,app-ppr02.dev.datan.mgt.proxad.net:9092"
+SRC_BROKERS = os.environ.get(
+    "SRC_BROKERS",
+    "kafka01.bip.mgt.proxad.net:9092,kafka02.bip.mgt.proxad.net:9092,kafka03.bip.mgt.proxad.net:9092",
+)
+DST_BROKERS = os.environ.get(
+    "DST_BROKERS",
+    "app-ppr01.dev.datan.mgt.proxad.net:9092,app-ppr02.dev.datan.mgt.proxad.net:9092",
+)
 
 for t in ("telemetry_events_metadata", "telemetry_events",
           "sink_events_metadata", "sink_virtports_events"):
