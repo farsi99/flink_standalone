@@ -101,17 +101,50 @@ cd /home/hfarouk/tests/flink
 
 # Environnement de dev local (Docker Compose)
 
-Un `docker-compose.yml` fournit un environnement local complet pour tester `job_freepro.py`
-sans toucher aux clusters Kafka de prod/preprod :
+Un `docker-compose.yml` fournit un environnement local complet pour tester les jobs
+(`freepro`, `UPR`) sans toucher aux clusters Kafka de prod/preprod :
 
 - **kafka** : un broker Kafka (KRaft, sans Zookeeper) exposé sur `localhost:9092`.
 - **kafka-ui** : UI web sur `http://localhost:8080` pour inspecter topics/messages.
-- **jobmanager** / **taskmanager** : cluster Flink 2.2.1 (build local via `Dockerfile`,
-  Flink + Python3 + `apache-flink==2.2.1`), UI sur `http://localhost:8081`.
+- **minio** : stockage S3-compatible pour les checkpoints Flink, UI sur
+  `http://localhost:9001` (login `minioadmin` / `minioadmin`), API sur
+  `http://localhost:9000`. Le bucket `flink-checkpoints` est cree
+  automatiquement par le service `minio-init` (one-shot, via `mc mb`).
+- **jobmanager** / **taskmanager** : cluster Flink 2.2.1 (build local via
+  `flink-jobs/Dockerfile`, Flink + Python3 + `apache-flink==2.2.1`), UI sur
+  `http://localhost:8081`. Checkpoints stockes sur MinIO, un sous-dossier par
+  job (`s3://flink-checkpoints/freepro/checkpoints`,
+  `s3://flink-checkpoints/UPR/checkpoints`, plugin `flink-s3-fs-hadoop`).
 
-Le job est monté dans les conteneurs Flink (`job_freepro.py` et `jars/`) et pointe par
-defaut vers les brokers de prod ; en local, `SRC_BROKERS`/`DST_BROKERS` sont surchargés
-vers `kafka:19092` (meme broker pour source et sink, simplement des topics differents).
+`flink-jobs/` est monté dans les conteneurs Flink et pointe par defaut vers les
+brokers de prod ; en local, `SRC_BROKERS`/`DST_BROKERS` sont surchargés vers
+`kafka:19092` (meme broker pour source et sink, simplement des topics
+differents). Le bucket de checkpoints est surchargeable via
+`CHECKPOINTS_BUCKET` (defaut `flink-checkpoints`).
+
+Structure de `flink-jobs/` :
+- un sous-dossier par job (`freepro/`, `UPR/`), avec son `job_*.py` ;
+- `common/` : config/env partages entre jobs (env variables, table
+  environment/checkpointing) - voir `flink-jobs/common/`;
+- `_template/` : squelette a copier pour demarrer un nouveau job ;
+- `jars/` : jar du connecteur Kafka, partage par tous les jobs.
+
+### Variables d'environnement
+
+| Variable | Service(s) | Defaut (code) | Defaut en local (docker-compose.yml) | Role |
+| --- | --- | --- | --- | --- |
+| `SRC_BROKERS` | `freepro`, `UPR` (`flink-jobs/common/settings.py`) | brokers Kafka prod (`kafka01/02/03.bip.mgt.proxad.net:9092`) | `kafka:19092` | Brokers Kafka source (lecture des topics `telemetry_events*`). |
+| `DST_BROKERS` | `freepro`, `UPR` (`flink-jobs/common/settings.py`) | brokers Kafka preprod (`app-ppr01/02.dev.datan.mgt.proxad.net:9092`) | `kafka:19092` | Brokers Kafka sink (ecriture des topics de sortie). |
+| `CHECKPOINTS_BUCKET` | `freepro`, `UPR` (`flink-jobs/common/settings.py`) | `flink-checkpoints` | `flink-checkpoints` (non surcharge) | Bucket S3/MinIO ou sont stockes les checkpoints Flink, sous `s3://<bucket>/<job_name>/checkpoints`. Doit correspondre au bucket cree par `minio-init`. |
+| `BROKERS` | `mock-producer` | `kafka:19092` | `kafka:19092` | Brokers Kafka vers lesquels le mock-producer publie. |
+| `TOPIC_METADATA` | `mock-producer` | `telemetry_events_metadata` | (non surcharge) | Topic de sortie pour les events metadata (vendor-info SFP + profil). |
+| `TOPIC_EVENTS` | `mock-producer` | `telemetry_events` | (non surcharge) | Topic de sortie pour les events discrets (unexpected-onu, mpcp-register-acks-timeouts, statut up/down). |
+| `TOPIC_METRICS` | `mock-producer` | `telemetry_metrics` | (non surcharge) | Topic de sortie pour les metriques continues (sfp mon tx/rx/temp, compteurs de trames). |
+| `DEVICE_COUNT` | `mock-producer` | `10` | (non surcharge) | Taille du pool de devices mock generes. |
+| `SLEEP_SECONDS` | `mock-producer` | `3` | (non surcharge) | Pause entre deux boucles de generation (tous les devices publient a chaque boucle). |
+
+Toutes surchargeables au besoin dans `docker-compose.yml` (section `environment:`
+du service concerne) ou via `docker compose run -e VAR=valeur ...`.
 
 ### Demarrer
 
@@ -129,20 +162,64 @@ toute facon desactive sur le broker de dev).
 ./scripts/create-topics.sh
 ```
 
-Cree les 4 topics utilises par le job (`telemetry_events_metadata`,
-`telemetry_events`, `events_metadata_freepro`, `virtports_events_freepro`),
-1 partition / 1 replica chacun. Le script est idempotent (`--if-not-exists`),
-on peut le relancer sans risque.
+Cree les topics utilises par les jobs (`telemetry_events_metadata`,
+`telemetry_events`, `telemetry_metrics`, `events_metadata_freepro`,
+`virtports_events_freepro`, `virtports_metrics_freepro`, `virtports_events_upr`),
+1 partition / 1 replica chacun.
+Le script est idempotent (`--if-not-exists`), on peut le relancer sans risque.
 
-### Soumettre le job
+### Generer des mock events en continu
+
+Le service `mock-producer` (voir `mock-producer/`) tourne en boucle tant que le
+conteneur n'est pas arrete, et publie des events au format telemetry
+(`name`/`timestamp`/`tags`/`values`) sur un pool de devices mock :
+
+- `telemetry_events_metadata` : vendor-info SFP + le path
+  `/epon-virtport/virtport/profile` (moitie du pool en profil `6`, moitie en
+  autre profil, pour verifier que `job_freepro.py` filtre bien).
+- `telemetry_events` : events `unexpected-onu` / `mpcp-register-acks-timeouts`.
+- `telemetry_metrics` : metriques SFP (tx/rx/temp) et compteurs de trames ; les
+  metriques portant un `virtport_virtport-id` sont enrichies par
+  `job_freepro.py` (profil 6 uniquement) et republiees sur
+  `virtports_metrics_freepro`.
+
+Demarre automatiquement avec `docker compose up -d --build`. Pour le
+piloter independamment :
+
+```bash
+docker compose up -d --build mock-producer   # (re)demarrer
+docker compose logs -f mock-producer         # suivre la production
+docker compose stop mock-producer            # arreter
+```
+
+Reglable via les variables d'environnement du service, voir la section
+[Variables d'environnement](#variables-denvironnement).
+
+### Soumettre les jobs
+
+`flink-jobs/` contient un sous-dossier par job ; ils tournent tous sur le meme
+cluster jobmanager/taskmanager (soumission independante, plusieurs jobs actifs
+en meme temps) :
 
 ```bash
 docker compose exec jobmanager /opt/flink/bin/flink run \
-  --python /opt/flink/usrlib/job_freepro.py \
+  --python /opt/flink/usrlib/freepro/job_freepro.py \
+  --jarfile /opt/flink/usrlib/jars/flink-sql-connector-kafka-4.0.1-2.0.jar \
+  -pyexec /usr/bin/python3 \
+  -pyclientexec /usr/bin/python3 -d
+
+docker compose exec jobmanager /opt/flink/bin/flink run \
+  --python /opt/flink/usrlib/UPR/job_upr.py \
   --jarfile /opt/flink/usrlib/jars/flink-sql-connector-kafka-4.0.1-2.0.jar \
   -pyexec /usr/bin/python3 \
   -pyclientexec /usr/bin/python3 -d
 ```
+
+`UPR` reprend la logique de l'ancien script `streaming_telemetry.py` (portage
+Flink) : ne garde que les lignes de `telemetry_events` avec un
+`virtport_virtport-id` et un `path` contenant `up`, publie le resultat sur
+`virtports_events_upr`. Contrairement a `freepro`, il lit en `latest-offset` (pas
+d'historique) et ecrit en append simple (pas d'upsert-kafka).
 
 Suivre l'execution sur `http://localhost:8081`.
 
@@ -168,6 +245,12 @@ docker exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server lo
 
 docker exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 \
   --topic virtports_events_freepro --from-beginning
+
+docker exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 \
+  --topic virtports_metrics_freepro --from-beginning
+
+docker exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 \
+  --topic virtports_events_upr --from-beginning
 ```
 
 ### Arreter et nettoyer

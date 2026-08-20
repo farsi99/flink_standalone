@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Cree les topics Kafka utilises par job_freepro.py dans l'env de dev local.
+# Cree les topics Kafka utilises par les jobs (freepro, UPR) dans l'env de dev local.
 # Necessaire car Flink liste les topics via AdminClient, qui ne declenche pas
 # l'auto-creation meme si auto.create.topics.enable=true (et ce flag est
 # desactive sur le broker de dev).
@@ -8,8 +8,11 @@ set -euo pipefail
 TOPICS=(
   telemetry_events_metadata
   telemetry_events
+  telemetry_metrics
   events_metadata_freepro
   virtports_events_freepro
+  virtports_metrics_freepro
+  virtports_events_upr
 )
 
 for t in "${TOPICS[@]}"; do
