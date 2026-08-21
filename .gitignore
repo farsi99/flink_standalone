@@ -1,3 +1,4 @@
 flink-jobs/jars/flink-sql-connector-kafka-4.0.1-2.0.jar
 .venv/
 __pycache__/
+.env

@@ -133,8 +133,8 @@ Structure de `flink-jobs/` :
 
 | Variable | Service(s) | Defaut (code) | Defaut en local (docker-compose.yml) | Role |
 | --- | --- | --- | --- | --- |
-| `SRC_BROKERS` | `freepro`, `UPR` (`flink-jobs/common/settings.py`) | brokers Kafka prod (`kafka01/02/03.bip.mgt.proxad.net:9092`) | `kafka:19092` | Brokers Kafka source (lecture des topics `telemetry_events*`). |
-| `DST_BROKERS` | `freepro`, `UPR` (`flink-jobs/common/settings.py`) | brokers Kafka preprod (`app-ppr01/02.dev.datan.mgt.proxad.net:9092`) | `kafka:19092` | Brokers Kafka sink (ecriture des topics de sortie). |
+| `SRC_BROKERS` | `freepro`, `UPR` (`flink-jobs/common/settings.py`) | brokers Kafka prod (`kafka01/02/03.bip.mgt.proxad.net:9092`) | non surcharge (defaut du code) | Brokers Kafka source (lecture des topics `telemetry_events*`). |
+| `DST_BROKERS` | `freepro`, `UPR` (`flink-jobs/common/settings.py`) | brokers Kafka preprod (`app-ppr01/02.dev.datan.mgt.proxad.net:9092`) | non surcharge (defaut du code) | Brokers Kafka sink (ecriture des topics de sortie). |
 | `CHECKPOINTS_BUCKET` | `freepro`, `UPR` (`flink-jobs/common/settings.py`) | `flink-checkpoints` | `flink-checkpoints` (non surcharge) | Bucket S3/MinIO ou sont stockes les checkpoints Flink, sous `s3://<bucket>/<job_name>/checkpoints`. Doit correspondre au bucket cree par `minio-init`. |
 | `BROKERS` | `mock-producer` | `kafka:19092` | `kafka:19092` | Brokers Kafka vers lesquels le mock-producer publie. |
 | `TOPIC_METADATA` | `mock-producer` | `telemetry_events_metadata` | (non surcharge) | Topic de sortie pour les events metadata (vendor-info SFP + profil). |
