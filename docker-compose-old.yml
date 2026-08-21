@@ -1,0 +1,82 @@
+services:
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: minio-init
+    entrypoint: >
+      sh -c "
+      mc alias set local http://minio:9000 minioadmin minioadmin &&
+      mc mb --ignore-existing local/flink-checkpoints
+      "
+    depends_on:
+      minio:
+        condition: service_healthy
+
+  jobmanager:
+    build: ./flink-jobs
+    container_name: jobmanager
+    hostname: jobmanager
+    ports:
+      - "8081:8081"
+    command: jobmanager
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: jobmanager
+        s3.access-key: minioadmin
+        s3.secret-key: minioadmin
+        s3.endpoint: http://minio:9000
+        s3.path.style.access: true
+      - ENABLE_BUILT_IN_PLUGINS=flink-s3-fs-hadoop-2.2.1.jar
+      - SRC_BROKERS=kafka:19092
+      - DST_BROKERS=kafka:19092
+    volumes:
+      - ./flink-jobs:/opt/flink/usrlib
+    depends_on:
+      kafka:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+
+  taskmanager:
+    build: ./flink-jobs
+    hostname: taskmanager
+    command: taskmanager
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: jobmanager
+        taskmanager.numberOfTaskSlots: 4
+        s3.access-key: minioadmin
+        s3.secret-key: minioadmin
+        s3.endpoint: http://minio:9000
+        s3.path.style.access: true
+      - ENABLE_BUILT_IN_PLUGINS=flink-s3-fs-hadoop-2.2.1.jar
+      - SRC_BROKERS=kafka:19092
+      - DST_BROKERS=kafka:19092
+    volumes:
+      - ./flink-jobs:/opt/flink/usrlib
+    depends_on:
+      - jobmanager
+    deploy:
+      replicas: 1
+
+volumes:
+  minio-data:
