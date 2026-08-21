@@ -37,20 +37,7 @@ services:
       kafka:
         condition: service_healthy
 
-  mock-producer:
-    build:
-      context: ./mock-producer
-      args:
-        HTTP_PROXY: ${HTTP_PROXY:-}
-        HTTPS_PROXY: ${HTTPS_PROXY:-}
-        NO_PROXY: ${NO_PROXY:-}
-    container_name: mock-producer
-    environment:
-      - BROKERS=kafka:19092
-    depends_on:
-      kafka:
-        condition: service_healthy
-    restart: unless-stopped
+
 
   minio:
     image: minio/minio:latest
