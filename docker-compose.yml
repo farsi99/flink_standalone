@@ -38,7 +38,12 @@ services:
         condition: service_healthy
 
   mock-producer:
-    build: ./mock-producer
+    build:
+      context: ./mock-producer
+      args:
+        HTTP_PROXY: ${HTTP_PROXY:-}
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
+        NO_PROXY: ${NO_PROXY:-}
     container_name: mock-producer
     environment:
       - BROKERS=kafka:19092
@@ -78,7 +83,12 @@ services:
         condition: service_healthy
 
   jobmanager:
-    build: ./flink-jobs
+    build:
+      context: ./flink-jobs
+      args:
+        HTTP_PROXY: ${HTTP_PROXY:-}
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
+        NO_PROXY: ${NO_PROXY:-}
     container_name: jobmanager
     hostname: jobmanager
     ports:
@@ -104,7 +114,12 @@ services:
         condition: service_completed_successfully
 
   taskmanager:
-    build: ./flink-jobs
+    build:
+      context: ./flink-jobs
+      args:
+        HTTP_PROXY: ${HTTP_PROXY:-}
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
+        NO_PROXY: ${NO_PROXY:-}
     hostname: taskmanager
     command: taskmanager
     environment:
